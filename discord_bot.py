@@ -12,15 +12,15 @@ import datetime
 
 """
 TODO LIST
-1. 커맨드별 권한 설정
 2. notify 테스트
-3. 맵 알림 중복
+3. 오프라인 도배
 """
 
 r = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
 
-TOKEN = "NTM2NDUwMjM5ODY4MDQzMjY1.DyW6PA.trxuITtdWXUtp_cR2pFe9RGIUIE"
+TOKEN = ""
 client = commands.Bot(command_prefix="!")
+client.remove_command("help")
 prev_map = [["ip", 123,["map",0]]]
 
 with open ("prev_map.p","rb") as f:
@@ -39,6 +39,19 @@ def log(string):
         log.write(string.encode())
         log.close()
 
+def is_owner(ctx):
+    return ctx.message.author.id == "237879546752270337"
+
+@client.command()
+async def ANN():
+    await client.say("?????")
+
+@client.command()
+async def help():
+    embed =discord.Embed(title="commands list", description="!add [server] {port} : add server[admin only]\n!remove : remove server\n!notify [map] : add map notification\n!unnotify [map] : delete map notification\n!map : get current map\n!players : get user list")
+    await client.say(embed=embed)
+
+
 @client.command(pass_context=True)
 async def server(ctx):
     for i in server_list.clist:
@@ -49,6 +62,7 @@ async def server(ctx):
             await client.delete_message(ctx.message)
 
 @client.command(pass_context=True)
+@commands.check(is_owner)
 async def add(ctx, ip, port=27015):
     print("addserver")
     result = server_list.add_server(ctx.message.channel.id,ip, port)
@@ -67,12 +81,17 @@ async def add(ctx, ip, port=27015):
 
 @add.error
 async def addserver_error(error,ctx):
-    temp = await client.say("type `!add <ip> [port{default:27015}]`")
+    if error == commands.NotOwner:
+        temp = await client.send_message(ctx.message.channel, "You don't have permissions")
+    else:
+        temp = await client.say("type `!add <ip> [port{default:27015}]`")
+        print(error)
     await asyncio.sleep(3)
     await client.delete_message(temp)
     await client.delete_message(ctx.message)
 
 @client.command(pass_context=True)
+@commands.check(is_owner)
 async def remove(ctx):
     result = server_list.remove_server(ctx.message.channel.id)
     if result == 1:
@@ -86,6 +105,16 @@ async def remove(ctx):
         await client.delete_message(temp)
         await client.delete_message(ctx.message)
 
+@remove.error
+async def remove_error(error,ctx):
+    if error == commands.NotOwner:
+        temp = await client.send_message(ctx.message.channel, "You don't have permissions")
+    else:
+        temp = await client.send_message(ctx.message.channel, "Error")
+        print(error)
+    await asyncio.sleep(3)
+    await client.delete_message(temp)
+    await client.delete_message(ctx.message)
 @client.command(pass_context=True)
 async def map(ctx):
     a=[]
@@ -95,7 +124,7 @@ async def map(ctx):
             a = [i[1], i[2]]
     try:
         sserver = steam_server.server(a[0], int(a[1]))
-        new_map = discord.Embed(title = sserver["server_name"],description="Now Playing: "+str(sserver["map"])+"\n"+"Playing: "+str(sserver["player_count"])+"/"+str(sserver["max_players"])+"\n"+"Connect: steam://connect/"+a[0]+":"+str(a[1]),timestamp=datetime.datetime.utcnow())
+        new_map = discord.Embed(title = sserver["server_name"],description="Now Playing: '"+str(sserver["map"])+"'\n"+"Playing: '"+str(sserver["player_count"])+"/"+str(sserver["max_players"])+"'\n"+"Connect: 'steam://connect/"+a[0]+":"+str(a[1])+"'",timestamp=datetime.datetime.utcnow())
     except valve.source.NoResponseError as e:
         err = 1
         pass
@@ -155,9 +184,8 @@ async def players_error(error,ctx):
 async def notify(ctx, map):
     add_map = 1
     add_channel = 1
-    print("notify "+map)
     for a in range(len(server_list.notify)):
-        if a == ctx.message.channel.id:
+        if server_list.notify[a][0] == ctx.message.channel.id:
             add_channel = 0
             if server_list.notify[a][1] == map:
                 add_map = 0
@@ -166,12 +194,14 @@ async def notify(ctx, map):
                         temp = await client.say(map +" is already added your notify list")
                         await asyncio.sleep(3)
                         await client.delete_message(temp)
+                        await client.delete_message(ctx.message)
                         return
                 server_list.notify[a][2].append(ctx.message.author.id)
                 server_list.save()
                 temp = await client.say("1 Add "+map + " to your notify list")
                 await asyncio.sleep(3)
                 await client.delete_message(temp)
+                await client.delete_message(ctx.message)
                 return
             server_list.notify[a].append(map)
             server_list.notify[a].append([ctx.message.author.id])
@@ -179,12 +209,14 @@ async def notify(ctx, map):
             temp = client.say("1 Add " + map + " to your notify list")
             await asyncio.sleep(3)
             await client.delete_message(temp)
+            await client.delete_message(ctx.message)
             return
     server_list.notify.append([ctx.message.channel.id,map,[ctx.message.author.id]])
     server_list.save()
     temp = await client.say("1 Add " + map + " to your notify list")
     await asyncio.sleep(3)
     await client.delete_message(temp)
+    await client.delete_message(ctx.message)
     return
 
 @notify.error
@@ -197,27 +229,33 @@ async def notify_error(error, ctx):
 @client.command(pass_context=True)
 async def unnotify(ctx, map):
     for a in range(len(server_list.notify)):
-        if a == ctx.message.channel.id:
+        if server_list.notify[a][0] == ctx.message.channel.id:
             if server_list.notify[a][1] == map:
                 for l in range(len(server_list.notify[a][2])):
                     if server_list.notify[a][2][l] == ctx.message.author.id:
                         del server_list.notify[a][2][l]
+                        if server_list.notify[a][2] == []:
+                            del server_list.notify[a]
                         server_list.save()
                         temp = await client.say("Remove "+map + " on your notify list")
                         await asyncio.sleep(3)
                         await client.delete_message(temp)
+                        await client.delete_message(ctx.message)
                         return
-                        temp = await client.say("Did you add " + map + " on your notify list?")
-                        await asyncio.sleep(3)
-                        await client.delete_message(temp)
-                return
+                    temp = await client.say("Did you add " + map + " on your notify list?")
+                    await asyncio.sleep(3)
+                    await client.delete_message(temp)
+                    await client.delete_message(ctx.message)
+                    return
                 temp = await client.say("Did you add " + map + " on your notify list?")
                 await asyncio.sleep(3)
                 await client.delete_message(temp)
-            return
+                await client.delete_message(ctx.message)
+                return
     temp = await client.say("Did you add "+map+" on your notify list?")
     await asyncio.sleep(3)
     await client.delete_message(temp)
+    await client.delete_message(ctx.message)
     return
 
 @unnotify.error
@@ -225,7 +263,6 @@ async def unnotify_error(error,ctx):
     temp = await client.send_message(ctx.message.channel,"!unnotify [map]")
     await asyncio.sleep(3)
     await client.delete_message(temp)
-    print(error)
 
 @client.event
 async def on_ready():
@@ -246,13 +283,12 @@ async def on_ready():
 async def map_update():
     while(True):
         await asyncio.sleep(4)
-        print(prev_map)
         for a in server_list.slist:
             off = 0
             error = 0
             try:
                 sserver = steam_server.server(a[0], int(a[1]))
-                new_map = discord.Embed(title = sserver["server_name"],description="Now Playing: "+str(sserver["map"])+"\n"+"Playing: "+str(sserver["player_count"])+"/"+str(sserver["max_players"])+"\n"+"Connect: steam://connect/"+a[0]+":"+str(a[1]),timestamp=datetime.datetime.utcnow())
+                new_map = discord.Embed(title = sserver["server_name"],description="Now Playing: '"+str(sserver["map"])+"'\n"+"Playing: '"+str(sserver["player_count"])+"/"+str(sserver["max_players"])+"'\n"+"Connect: 'steam://connect/"+a[0]+":"+str(a[1])+"'",timestamp=datetime.datetime.utcnow())
             except valve.source.NoResponseError as e:
                 off = 1
                 error = 1
@@ -265,16 +301,21 @@ async def map_update():
                                 c = client.get_channel(c)
                                 await client.send_message(c, "Server seems offline")
                                 pass
-                        else:
-                            prev_map[i][2] = [prev_map[i][2][0], prev_map[i][2][1] + 1]
-                            map_save()
+                        prev_map[i][2] = [prev_map[i][2][0], prev_map[i][2][1] + 1]
+                        map_save()
                     elif not prev_map[i][2][0] == sserver["map"]:
                         for c in a[2]:
                             c = client.get_channel(c)
-                            print(prev_map[i], sserver["map"])
                             prev_map[i][2] = [sserver["map"], 0]
                             map_save()
+                            #channel
                             await client.send_message(c, embed=new_map)
+                            #notify
+                            for i in server_list.notify:
+                                if i[0] == c.id and i[1] == sserver["map"]:
+                                    for user in i[2]:
+                                        user = await client.get_user_info(user)
+                                        await client.send_message(user,embed=new_map)
                             pass
                             off = 1
 
